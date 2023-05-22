@@ -9,12 +9,28 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/eks"
 )
 
 type Credentials struct {
 	AccessKey string
 	SecretKey string
 	Region    string
+}
+
+type ClusterSpec struct {
+	Name         string
+	EBSCSIDriver *bool
+}
+
+type OIDCProviderStep struct {
+	OIDCProviderARN string
+}
+
+type EBSCSIDriverEnableConfig struct {
+	Cluster    *eks.Cluster
+	Spec       ClusterSpec
+	OIDCConfig OIDCProviderStep
 }
 
 var creds Credentials
@@ -65,7 +81,21 @@ func main() {
 		4. Annotate Service Account `ebs-csi-controller-sa` with IAM role name
 		5. Restart `ebs-csi-controller` deployment
 	*/
-	getEKSCluster()
-	log.Printf("Creating OIDC provider\n")
-	//createOIDCProvider()
+	var clusterName string
+	var exist bool
+	if clusterName, exist = os.LookupEnv("EKS_CLUSTER_NAME"); !exist {
+		log.Fatalf("EKS_CLUSTER_NAME not set")
+		clusterName = "test-eks-cluster"
+	}
+	clusterSpec := ClusterSpec{
+		Name:         clusterName,
+		EBSCSIDriver: aws.Bool(true),
+	}
+	eksCluster := newEKSCluster(clusterSpec)
+	config := EBSCSIDriverEnableConfig{
+		Cluster: eksCluster,
+		Spec:    clusterSpec,
+	}
+	log.Printf("Looking for existing OIDC providers\n")
+	config.createOIDCProvider()
 }

@@ -21,12 +21,12 @@ func EKS() (eksiface.EKSAPI, error) {
 	return eks.New(session), nil
 }
 
-func getEKSCluster() eks.Cluster {
+func newEKSCluster(spec ClusterSpec) *eks.Cluster {
 	eksService, err := EKS()
 	if err != nil {
 		log.Fatalf("cannot start EKS session: %v", err)
 	}
-	clusterName := "test-carlos"
+	clusterName := spec.Name
 	output, err := eksService.DescribeCluster(
 		&eks.DescribeClusterInput{
 			Name: &clusterName,
@@ -40,7 +40,9 @@ func getEKSCluster() eks.Cluster {
 	}
 	log.Println("Cluster OIDC provider:", path.Base(*output.Cluster.Identity.Oidc.Issuer))
 
-	return eks.Cluster{}
+	return output.Cluster
 }
 
 func installEKSClusterAddon() {}
+
+func createEKSCluster() {}
