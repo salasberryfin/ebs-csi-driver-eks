@@ -25,7 +25,7 @@ func IAM() (iamiface.IAMAPI, error) {
 	return iam.New(session), nil
 }
 
-func (e *EBSCSIDriverEnableConfig) createOIDCProvider() {
+func (e *EBSCSIDriverEnableConfig) createOIDCProvider() string {
 	iamService, err := IAM()
 	if err != nil {
 		log.Fatalf("cannot start IAM session: %v", err)
@@ -35,10 +35,11 @@ func (e *EBSCSIDriverEnableConfig) createOIDCProvider() {
 		log.Fatalf("listing OIDC providers: %v", err)
 	}
 	for _, prov := range output.OpenIDConnectProviderList {
+		log.Println("full Oidc.Issuer:", *e.Cluster.Identity.Oidc.Issuer)
 		if strings.Contains(*prov.Arn, path.Base(*e.Cluster.Identity.Oidc.Issuer)) {
 			log.Println("Found match:", *prov.Arn)
 			e.OIDCConfig.OIDCProviderARN = *prov.Arn
-			return
+			return path.Base(*prov.Arn)
 		}
 	}
 	log.Println("No matching providers found for:", path.Base(*e.Cluster.Identity.Oidc.Issuer))
@@ -60,6 +61,8 @@ func (e *EBSCSIDriverEnableConfig) createOIDCProvider() {
 	}
 	log.Println("created OIDC provider:", oidc)
 	e.OIDCConfig.OIDCProviderARN = *oidc.OpenIDConnectProviderArn
+
+	return path.Base(*oidc.OpenIDConnectProviderArn)
 }
 
 func (e *EBSCSIDriverEnableConfig) getIssuerThumbprint() (string, error) {

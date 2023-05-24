@@ -97,5 +97,7 @@ func main() {
 		Spec:    clusterSpec,
 	}
 	log.Printf("Looking for existing OIDC providers\n")
-	config.createOIDCProvider()
+	oidc := config.createOIDCProvider()
+	log.Println("The ID of the OIDC provider is:", oidc)
+	createIAMRole(oidc)
 }
