@@ -1,33 +1,22 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"path"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/eks"
-	"github.com/aws/aws-sdk-go/service/eks/eksiface"
 )
 
 const (
 	ebsCSIAddonName = "aws-ebs-csi-driver"
 )
 
-func EKS() (eksiface.EKSAPI, error) {
-	session, err := createSession(creds.AccessKey, creds.SecretKey, creds.Region)
-	if err != nil {
-		return nil, err
-	}
-
-	return eks.New(session), nil
-}
-
-func newEKSCluster(spec ClusterSpec) *eks.Cluster {
-	eksService, err := EKS()
-	if err != nil {
-		log.Fatalf("cannot start EKS session: %v", err)
-	}
-	clusterName := spec.Name
-	output, err := eksService.DescribeCluster(
+func newEKSCluster() *eks.Cluster {
+	clusterName := clusterConfig.Spec.Name
+	output, err := clusterConfig.AWS.EKSSservice.DescribeCluster(
 		&eks.DescribeClusterInput{
 			Name: &clusterName,
 		},
@@ -43,6 +32,42 @@ func newEKSCluster(spec ClusterSpec) *eks.Cluster {
 	return output.Cluster
 }
 
-func installEKSClusterAddon() {}
+func checkEBSAddon() (string, error) {
+	input := eks.DescribeAddonInput{
+		AddonName:   aws.String(ebsCSIAddonName),
+		ClusterName: aws.String(clusterConfig.Spec.Name),
+	}
 
-func createEKSCluster() {}
+	output, err := clusterConfig.AWS.EKSSservice.DescribeAddon(&input)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == eks.ErrCodeResourceNotFoundException {
+				log.Println("EBS CSI driver addon not found: got resource not found exception")
+				return "", nil
+			}
+		}
+	}
+	if output == nil {
+		log.Println("EBS CSI driver addon not found")
+		return "", nil
+	}
+	log.Println("EBS CSI driver addon found:", *output.Addon.AddonArn)
+
+	return *output.Addon.AddonArn, nil
+}
+
+func installEBSAddon(roleARN string) error {
+	input := eks.CreateAddonInput{
+		AddonName:             aws.String(ebsCSIAddonName),
+		ClusterName:           aws.String(clusterConfig.Spec.Name),
+		ServiceAccountRoleArn: aws.String(roleARN),
+	}
+
+	output, err := clusterConfig.AWS.EKSSservice.CreateAddon(&input)
+	if err != nil {
+		return fmt.Errorf("cannot install EBS CSI driver addon: %v", err)
+	}
+	fmt.Println("installed addon EBS CSI driver:", *output.Addon.AddonArn)
+
+	return nil
+}

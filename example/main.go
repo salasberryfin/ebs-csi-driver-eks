@@ -7,9 +7,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/eks"
+	"github.com/rancher/eks-operator/pkg/eks/services"
 )
 
 type Credentials struct {
@@ -18,9 +18,20 @@ type Credentials struct {
 	Region    string
 }
 
+type AWSConfig struct {
+	CFService   services.CloudFormationServiceInterface
+	EKSSservice services.EKSServiceInterface
+	IAMService  services.IAMServiceInterface
+}
+
 type ClusterSpec struct {
 	Name         string
 	EBSCSIDriver *bool
+}
+
+type ClusterConfig struct {
+	Spec ClusterSpec
+	AWS  AWSConfig
 }
 
 type OIDCProviderStep struct {
@@ -33,53 +44,48 @@ type EBSCSIDriverEnableConfig struct {
 	OIDCConfig OIDCProviderStep
 }
 
-var creds Credentials
-
-func createSession(accessKey, secretKey, region string) (*session.Session, error) {
-	cfg := aws.NewConfig()
-	cfg.Credentials = credentials.NewStaticCredentials(accessKey, secretKey, "")
-	cfg.Region = aws.String(region)
-
-	cfg.CredentialsChainVerboseErrors = aws.Bool(true)
-	sess, err := session.NewSessionWithOptions(session.Options{
-		Config:            *cfg,
-		SharedConfigState: session.SharedConfigDisable,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("creating AWS session: %w", err)
-	}
-	sess.Handlers.Build.PushFront(request.WithAppendUserAgent("eks-ebs-enable"))
-
-	return sess, nil
-}
+var clusterConfig ClusterConfig
 
 func init() {
-	if access_key, exist := os.LookupEnv("AWS_ACCESS_KEY_ID"); !exist {
+	var accessKey, secretKey, region string
+	var exist bool
+	if accessKey, exist = os.LookupEnv("AWS_ACCESS_KEY_ID"); !exist {
 		log.Fatal("AWS_ACCESS_KEY_ID not set")
-	} else {
-		creds.AccessKey = access_key
 	}
-	if secret_key, exist := os.LookupEnv("AWS_SECRET_ACCESS_KEY"); !exist {
+	if secretKey, exist = os.LookupEnv("AWS_SECRET_ACCESS_KEY"); !exist {
 		log.Fatal("AWS_SECRET_ACCESS_KEY not set")
-	} else {
-		creds.SecretKey = secret_key
 	}
-	if region, exist := os.LookupEnv("AWS_REGION"); !exist {
+	if region, exist = os.LookupEnv("AWS_REGION"); !exist {
 		log.Fatal("AWS_REGION not set")
-	} else {
-		creds.Region = region
+	}
+	awsConfig := &aws.Config{}
+	awsConfig.Region = aws.String(region)
+	awsConfig.Credentials = credentials.NewStaticCredentials(accessKey, secretKey, "")
+	sess, err := session.NewSession(awsConfig)
+	if err != nil {
+		fmt.Println("failed to create new AWS session")
+		os.Exit(1)
+	}
+
+	cfService := services.NewCloudFormationService(sess)
+	eksServices := services.NewEKSService(sess)
+	iamServices := services.NewIAMService(sess)
+	clusterConfig.AWS = AWSConfig{
+		CFService:   cfService,
+		EKSSservice: eksServices,
+		IAMService:  iamServices,
 	}
 }
 
 func main() {
 	/*
-		1. OIDC provider
-		2. IAM role
+		- [x] OIDC provider
+		- [x] IAM role
 			a. Trust relationship with OIDC
 			b. Permissions policy for volume actions
-		3. Install EKS addon / Deploy driver
-		4. Annotate Service Account `ebs-csi-controller-sa` with IAM role name
-		5. Restart `ebs-csi-controller` deployment
+		- [ ] Install EKS addon / Deploy driver
+		- [ ] Annotate Service Account `ebs-csi-controller-sa` with IAM role name
+		- [ ] Restart `ebs-csi-controller` deployment
 	*/
 	var clusterName string
 	var exist bool
@@ -91,7 +97,8 @@ func main() {
 		Name:         clusterName,
 		EBSCSIDriver: aws.Bool(true),
 	}
-	eksCluster := newEKSCluster(clusterSpec)
+	clusterConfig.Spec = clusterSpec
+	eksCluster := newEKSCluster()
 	config := EBSCSIDriverEnableConfig{
 		Cluster: eksCluster,
 		Spec:    clusterSpec,
@@ -99,5 +106,24 @@ func main() {
 	log.Printf("Looking for existing OIDC providers\n")
 	oidc := config.createOIDCProvider()
 	log.Println("The ID of the OIDC provider is:", oidc)
-	createIAMRole(oidc)
+	roleArn, err := createIAMRole(oidc)
+	if err != nil {
+		log.Fatalf("creating iam role: %v", err)
+	}
+	addonArn, err := checkEBSAddon()
+	if err != nil {
+		log.Fatalf("checking if ebs addon is installed: %v", err)
+	}
+	if addonArn == "" {
+		// addon not installed
+		log.Println("EBS CSI driver addon not installed, installing now")
+		err = installEBSAddon(roleArn)
+	}
+	addonArn, err = checkEBSAddon()
+	if err != nil {
+		log.Fatalf("checking if ebs addon is installed: %v", err)
+	}
+	if addonArn != "" {
+		log.Println("EBS CSI driver addon installed")
+	}
 }

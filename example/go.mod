@@ -2,8 +2,10 @@ module github.com/salasberryfin/ebs-csi-driver-eks
 
 go 1.20
 
+replace github.com/rancher/eks-operator v1.2.1 => github.com/salasberryfin/eks-operator v0.0.4-csalas
+
 require (
-	github.com/aws/aws-sdk-go v1.44.266
+	github.com/aws/aws-sdk-go v1.44.269
 	github.com/rancher/eks-operator v1.2.1
 )
 
@@ -21,9 +23,9 @@ require (
 	golang.org/x/text v0.9.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	k8s.io/apimachinery v0.25.4 // indirect
-	k8s.io/klog/v2 v2.90.1 // indirect
-	k8s.io/utils v0.0.0-20230209194617-a36077c30491 // indirect
+	k8s.io/apimachinery v0.27.2 // indirect
+	k8s.io/klog/v2 v2.100.1 // indirect
+	k8s.io/utils v0.0.0-20230505201702-9f6742963106 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
 )

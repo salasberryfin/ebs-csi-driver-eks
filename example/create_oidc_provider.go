@@ -13,29 +13,14 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 )
 
-func IAM() (iamiface.IAMAPI, error) {
-	session, err := createSession(creds.AccessKey, creds.SecretKey, creds.Region)
-	if err != nil {
-		return nil, err
-	}
-
-	return iam.New(session), nil
-}
-
 func (e *EBSCSIDriverEnableConfig) createOIDCProvider() string {
-	iamService, err := IAM()
-	if err != nil {
-		log.Fatalf("cannot start IAM session: %v", err)
-	}
-	output, err := iamService.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
+	output, err := clusterConfig.AWS.IAMService.ListOIDCProviders(&iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
 		log.Fatalf("listing OIDC providers: %v", err)
 	}
 	for _, prov := range output.OpenIDConnectProviderList {
-		log.Println("full Oidc.Issuer:", *e.Cluster.Identity.Oidc.Issuer)
 		if strings.Contains(*prov.Arn, path.Base(*e.Cluster.Identity.Oidc.Issuer)) {
 			log.Println("Found match:", *prov.Arn)
 			e.OIDCConfig.OIDCProviderARN = *prov.Arn
@@ -55,7 +40,7 @@ func (e *EBSCSIDriverEnableConfig) createOIDCProvider() string {
 		Url:            e.Cluster.Identity.Oidc.Issuer,
 		Tags:           []*iam.Tag{},
 	}
-	oidc, err := iamService.CreateOpenIDConnectProvider(input)
+	oidc, err := clusterConfig.AWS.IAMService.CreateOIDCProvider(input)
 	if err != nil {
 		log.Fatalf("creating OIDC provider: %v", err)
 	}
