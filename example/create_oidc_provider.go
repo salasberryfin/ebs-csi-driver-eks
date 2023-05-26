@@ -79,5 +79,6 @@ func (e *EBSCSIDriverEnableConfig) getIssuerThumbprint() (string, error) {
 	}
 
 	root := resp.TLS.PeerCertificates[len(resp.TLS.PeerCertificates)-1]
+	fmt.Println("thumbprint is:", fmt.Sprintf("%x", sha1.Sum(root.Raw)))
 	return fmt.Sprintf("%x", sha1.Sum(root.Raw)), nil
 }
